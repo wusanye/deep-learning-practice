@@ -38,17 +38,48 @@ class Yolo(object):
 
     def _build_net(self):
         """ build the net"""
-
         if self.verbose:
             print("Start to bulid the network ...")
-        self.images = tf.placeholder(tf.float32, [None, 488, 488, 3])
+        self.images = tf.placeholder(tf.float32, [None, 448, 448, 3])
         net = self._conv_layer(self.images, 1, 64, 7, 2)
+        net = self._maxpool_layer(net, 1, 2, 2)
+        net = self._conv_layer(net, 2, 192, 3, 1)
+        net = self._maxpool_layer(net, 2, 2, 2)
+        net = self._conv_layer(net, 3, 128, 1, 1)
+        net = self._conv_layer(net, 4, 256, 3, 1)
+        net = self._conv_layer(net, 5, 256, 1, 1)
+        net = self._conv_layer(net, 6, 512, 3, 1)
+        net = self._maxpool_layer(net, 6, 2, 2)
+        net = self._conv_layer(net, 7, 256, 1, 1)
+        net = self._conv_layer(net, 8, 512, 3, 1)
+        net = self._conv_layer(net, 9, 256, 1, 1)
+        net = self._conv_layer(net, 10, 512, 3, 1)
+        net = self._conv_layer(net, 11, 256, 1, 1)
+        net = self._conv_layer(net, 12, 512, 3, 1)
+        net = self._conv_layer(net, 13, 256, 1, 1)
+        net = self._conv_layer(net, 14, 512, 3, 1)
+        net = self._conv_layer(net, 15, 512, 1, 1)
+        net = self._conv_layer(net, 16, 1024, 3, 1)
+        net = self._maxpool_layer(net, 16, 2, 2)
+        net = self._conv_layer(net, 17, 512, 1, 1)
+        net = self._conv_layer(net, 18, 1024, 3, 1)
+        net = self._conv_layer(net, 19, 512, 1, 1)
+        net = self._conv_layer(net, 20, 1024, 3, 1)
+        net = self._conv_layer(net, 21, 1024, 3, 1)
+        net = self._conv_layer(net, 22, 1024, 3, 2)
+        net = self._conv_layer(net, 23, 1024, 3, 1)
+        net = self._conv_layer(net, 24, 1024, 3, 1)
+        net = self._flatten(net)
+        net = self._fc_layer(net, 25, 512, activation=leak_relu)
+        net = self._fc_layer(net, 26, 4096, activation=leak_relu)
+        net = self._fc_layer(net, 27, self.S*self.S*(self.C+5*self.B))
+        self.predicts = net
 
     def _conv_layer(self, x, id, filters_num, filter_size, stride):
         """convolution layer"""
-        in_channels = x.get_shape.as_list()[-1]
+        in_channels = x.get_shape().as_list()[-1]
         weight = tf.Variable(tf.truncated_normal([filter_size, filter_size, in_channels, filters_num], stddev=0.1))
-        bias = tf.Variable(tf.zero([filters_num, ]))
+        bias = tf.Variable(tf.zeros([filters_num, ]))
 
         # padding, note: not using padding='SAME'
         pad_size = filter_size // 2
@@ -68,7 +99,7 @@ class Yolo(object):
         """fully connected layer"""
         num_in = x.get_shape().as_list()[-1]
         weight = tf.Variable(tf.truncated_normal([num_in, num_out], stddev=0.1))
-        bias = tf.Variable(tf.zero([num_out, ]))
+        bias = tf.Variable(tf.zeros([num_out, ]))
         output = tf.nn.xw_plus_b(x, weight, bias)
         if activation:
             output = activation(output)
@@ -119,7 +150,7 @@ class Yolo(object):
         boxes[:, :, :, :2] /= self.S        # relative to grid's width and height
 
         # predictions of w, h are square rooted
-        boxes[:, :, :, :2] = np.square(boxes[:, :, :, : 2])
+        boxes[:, :, :, :2] = np.square(boxes[:, :, :, 2:])
 
         # scale to original size
         boxes[:, :, :, 0] *= img_w
@@ -179,12 +210,12 @@ class Yolo(object):
 
         return union
 
-    def detec_from_file(self, image_file, imshow=True, detected_boxes_file='boxex.txt',
+    def detect_from_file(self, image_file, imshow=True, detected_boxes_file='boxes.txt',
                         detected_image_file='detected_image.jpg'):
         """detection given a image file"""
         image = cv2.imread(image_file)
-        img_h, img_w = cv2.shape
-        predicts = self.detect_from_file(image)
+        img_h, img_w, _ = image.shape
+        predicts = self.detect_from_image(image)
         predicted_boxes = self._interpret_predicts(predicts, img_h, img_w)
 
         self.show_results(image, predicted_boxes, imshow, detected_boxes_file, detected_image_file)
@@ -193,33 +224,47 @@ class Yolo(object):
         """detection given a cv image"""
         img_resized = cv2.resize(image, (448, 448))
         img_RGB = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
-        img_resized_np = np.aarray(img_RGB)
+        img_resized_np = np.asarray(img_RGB)
         _images = np.zeros((1, 448, 448, 3), dtype=np.float32)
-        image[0] = (img_resized_np / 255.0) * 2.0 - 1.0
+        _images[0] = (img_resized_np / 255.0) * 2.0 - 1.0
         predicts = self.sess.run(self.predicts, feed_dict={self.images: _images})[0]  # [batch, S*S*(B*5+C)]
 
         return predicts
 
+    def show_results(self, image, predicted_boxes, imshow=True, detected_boxes_file=None, detected_image_file=None):
+        """show the detected boxes"""
+        img_cp = image.copy()
+        if detected_boxes_file:
+            f = open(detected_boxes_file, 'w')
+
+        # draw bounding boxes
+        for i in range(len(predicted_boxes)):
+            x, y = int(predicted_boxes[i][1]), int(predicted_boxes[i][2])
+            w, h = int(predicted_boxes[i][3]) // 2, int(predicted_boxes[i][4]) // 2
+            if self.verbose:
+                print("class: %s, [x, y, w, h]=[%d, %d, %d, %d], confidence=%f" % (predicted_boxes[i][0],
+                        x, y, w, h, predicted_boxes[i][-1]))
+
+                cv2.rectangle(img_cp, (x - w, y - h), (x + w, y + h), (0, 255, 0), 2)
+                cv2.rectangle(img_cp, (x - w, y - h - 20), (x + w, y - h), (125, 125, 125), -1)
+                cv2.putText(img_cp, predicted_boxes[i][0] + ' : %.2f' % predicted_boxes[i][5], (x - w + 5, y - h - 7),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+
+            if detected_boxes_file:
+                f.write(predicted_boxes[i][0] + ',' + str(x) + ',' + str(y) + ',' +
+                        str(w) + ',' + str(h) + ',' + str(predicted_boxes[i][5]) + '\n')
+
+        if imshow:
+            cv2.imshow('YoOLO_v1_detection', img_cp)
+            cv2.waitKey(1)
+        if detected_image_file:
+            cv2.imwrite(detected_image_file, img_cp)
+        if detected_boxes_file:
+            f.close()
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+if __name__ == "__main__":
+    yolo_net = Yolo("./weights/YOLO_small.ckpt")
+    yolo_net.detect_from_file("./test/car.jpg")
+    input()
 
