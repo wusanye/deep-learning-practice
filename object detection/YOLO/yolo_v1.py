@@ -266,7 +266,7 @@ class Yolo(object):
 
 
 if __name__ == "__main__":
-    yolo_net = Yolo("./weights/YOLO_small.ckpt")
+    yolo_net = Yolo("./weights/yolo_v1_weights.ckpt")
     yolo_net.detect_from_file("./test/nba.jpg")
     input()
 
