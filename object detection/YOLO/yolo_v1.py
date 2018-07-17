@@ -22,8 +22,8 @@ class Yolo(object):
         self.classes = ["aeroplane", "bicycle", "bird", "boat", "bottle",
                         "bus", "car", "cat", "chair", "cow", "diningtable",
                         "dog", "horse", "motorbike", "person", "pottedplant",
-                        "sheep", "sofa", "train","tvmonitor"]
-        self.C = len(self.classes) # num of classes
+                        "sheep", "sofa", "train", "tvmonitor"]
+        self.C = len(self.classes)  # num of classes
 
         # offset for box center (w.r.t top left point of each cell)
         self.x_offset = np.transpose(np.reshape(np.array([np.arange(self.S)] * self.S * self.B), [self.B, self.S, self.S]), [1, 2, 0])  # shape (7, 7, 2)
@@ -140,7 +140,7 @@ class Yolo(object):
         # class predictions
         class_probs = np.reshape(predicts[:idx1], [self.S, self.S, self.C])
         # box confidence
-        confs = np.reshape(predicts[idx1: idx2], [self.S, self.S, self.B])
+        confs = np.reshape(predicts[idx1:idx2], [self.S, self.S, self.B])
         # boxes -> (x, y, w, h)
         boxes = np.reshape(predicts[idx2:], [self.S, self.S, self.B, 4])
 
@@ -150,7 +150,7 @@ class Yolo(object):
         boxes[:, :, :, :2] /= self.S        # relative to grid's width and height
 
         # predictions of w, h are square rooted
-        boxes[:, :, :, :2] = np.square(boxes[:, :, :, 2:])
+        boxes[:, :, :, 2:] = np.square(boxes[:, :, :, 2:])
 
         # scale to original size
         boxes[:, :, :, 0] *= img_w
@@ -165,7 +165,7 @@ class Yolo(object):
         boxes = np.reshape(boxes, [-1, 4])  # [S*S*B, 4]
 
         # filter the boxes with scores less than threshold
-        scores[scores < self.threshold] = .0
+        scores[scores < self.threshold] = 0.0
 
         # non-max suppression
         self._non_max_suppression(scores, boxes)
@@ -175,7 +175,7 @@ class Yolo(object):
         max_idxs = np.argmax(scores, axis=1)
         for i in range(len(scores)):
             max_idx = max_idxs[i]
-            if scores[i, max_idx] > .0:
+            if scores[i, max_idx] > 0.0:
                 predicted_boxes.append((self.classes[max_idx], boxes[i, 0], boxes[i, 1], boxes[i, 2], boxes[i, 3], scores[i, max_idx]))
 
         return predicted_boxes
@@ -192,7 +192,7 @@ class Yolo(object):
                     if scores[sorted_idxs[i], c] < 1e-6:
                         continue
                     if self._iou(boxes[sorted_idxs[i]], boxes[sorted_idxs[last]]) > self.iou_threshold:
-                        scores[sorted_idxs[i], c] = 0
+                        scores[sorted_idxs[i], c] = 0.0
                 last -= 1
 
     def _iou(self, box1, box2):
@@ -208,7 +208,9 @@ class Yolo(object):
 
         union = box1[2]*box1[3] + box2[2]*box2[3] - intersection
 
-        return union
+        iou_ratio = intersection / union
+
+        return iou_ratio
 
     def detect_from_file(self, image_file, imshow=True, detected_boxes_file='boxes.txt',
                         detected_image_file='detected_image.jpg'):
@@ -246,8 +248,8 @@ class Yolo(object):
                         x, y, w, h, predicted_boxes[i][-1]))
 
                 cv2.rectangle(img_cp, (x - w, y - h), (x + w, y + h), (0, 255, 0), 2)
-                cv2.rectangle(img_cp, (x - w, y - h - 20), (x + w, y - h), (125, 125, 125), -1)
-                cv2.putText(img_cp, predicted_boxes[i][0] + ' : %.2f' % predicted_boxes[i][5], (x - w + 5, y - h - 7),
+                cv2.rectangle(img_cp, (x - w, y + h + 20), (x + w, y + h), (125, 125, 125), -1)
+                cv2.putText(img_cp, predicted_boxes[i][0] + ' : %.2f' % predicted_boxes[i][5], (x - w + 5, y + h + 7),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
             if detected_boxes_file:
@@ -265,6 +267,9 @@ class Yolo(object):
 
 if __name__ == "__main__":
     yolo_net = Yolo("./weights/YOLO_small.ckpt")
-    yolo_net.detect_from_file("./test/car.jpg")
+    yolo_net.detect_from_file("./test/nba.jpg")
     input()
+
+
+
 
